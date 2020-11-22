@@ -1,0 +1,69 @@
+version: '3.7'
+
+x-common-variables: &common-variables
+  - DEBUG=True
+  - DB_NAME=results
+  - DB_USER=postgres
+  - DB_PASSWORD=postgres
+  - DB_PORT=5432
+  - DB_HOST=postgres
+  - POSTS_CRON=*/15 * * * *
+
+services:
+  postgres:
+    image: postgres
+    container_name: postgres
+    restart: on-failure
+    environment:
+      - POSTGRES_DB=results
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_HOST=postgres
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./build/product/database/initrd.sh:/docker-entrypoint-initdb.d/init-database.sh
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: ./build/product/server/Dockerfile
+    restart: on-failure
+    container_name: flask_server
+    image: mail_test/baseimage:version
+    command: >
+      /bin/sh -c "python app.py"
+    depends_on:
+#      - postgres
+      postgres:
+        condition: service_healthy
+    environment:
+      *common-variables
+    expose:
+      - "8000"
+    ports:
+      - 8000:8000
+
+  tests:
+    build:
+      context: .
+      dockerfile: ./build/autotest/Dockerfile
+    container_name: flask_test
+    image: mail_test_test/baseimage_test:version
+#    command: /bin/sh
+    command: >
+      /bin/sh -c "py.test -s test_atom.py test_user.py"
+    depends_on:
+      - postgres
+      - app
+    environment:
+      *common-variables
+
+volumes:
+  postgres:
